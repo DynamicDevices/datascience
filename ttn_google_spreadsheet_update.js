@@ -21,8 +21,10 @@ function doPost(e){
 }
 
 function handleResponse(e) {
+  Logger.log("Waiting for lock")
   var lock = LockService.getPublicLock();
   lock.waitLock(30000); // wait 30 seconds before conceding defeat.
+  Logger.log("Got  lock")
 
   try {
     // next set where we write the data - you could write to multiple/alternate destinations
@@ -71,9 +73,15 @@ function handleResponse(e) {
     row.push(jsonData.counter);
     row.push(jsonData.payload_raw);
     var raw = Utilities.base64Decode(jsonData.payload_raw);
-    var decoded = Utilities.newBlob(raw).getDataAsString();
+
+//    var decoded = Utilities.newBlob(raw).getDataAsString();
+    var decoded = toHexString(raw).toUpperCase();
+
     row.push(decoded);
-    row.push(jsonData.metadata.time);
+
+    var formattedDate = Utilities.formatDate(new Date(getDateFromIso(jsonData.metadata.time)), "GMT", "yyyy-MM-dd HH:mm:ss");
+    row.push(formattedDate);
+
     row.push(jsonData.metadata.frequency);
     row.push(jsonData.metadata.modulation);
     row.push(jsonData.metadata.data_rate);
@@ -99,6 +107,9 @@ function handleResponse(e) {
           .createTextOutput(JSON.stringify({"result":"success", "row": nextRow}))
           .setMimeType(ContentService.MimeType.JSON);
   } catch(e) {
+
+    Logger.log(JSON.stringify({"result":"error", "error": e}));
+
     // if error return this
     return ContentService
           .createTextOutput(JSON.stringify({"result":"error", "error": e}))
@@ -111,5 +122,44 @@ function handleResponse(e) {
 function setup() {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
   SCRIPT_PROP.setProperty("key", doc.getId());
+}
+
+// http://delete.me.uk/2005/03/iso8601.html
+function getDateFromIso(string) {
+  try{
+    var aDate = new Date();
+    var regexp = "([0-9]{4})(-([0-9]{2})(-([0-9]{2})" +
+        "(T([0-9]{2}):([0-9]{2})(:([0-9]{2})(\\.([0-9]+))?)?" +
+        "(Z|(([-+])([0-9]{2}):([0-9]{2})))?)?)?)?";
+    var d = string.match(new RegExp(regexp));
+
+    var offset = 0;
+    var date = new Date(d[1], 0, 1);
+
+    if (d[3]) { date.setMonth(d[3] - 1); }
+    if (d[5]) { date.setDate(d[5]); }
+    if (d[7]) { date.setHours(d[7]); }
+    if (d[8]) { date.setMinutes(d[8]); }
+    if (d[10]) { date.setSeconds(d[10]); }
+    if (d[12]) { date.setMilliseconds(Number("0." + d[12]) * 1000); }
+    if (d[14]) {
+      offset = (Number(d[16]) * 60) + Number(d[17]);
+      offset *= ((d[15] == '-') ? 1 : -1);
+    }
+
+    offset -= date.getTimezoneOffset();
+    time = (Number(date) + (offset * 60 * 1000));
+    return aDate.setTime(Number(time));
+  } catch(e){
+    return;
+  }
+}
+
+function toHexString(byteArray) {
+  var s = '';
+  byteArray.forEach(function(byte) {
+    s += ('0' + (byte & 0xFF).toString(16)).slice(-2) + ' ';
+  });
+  return s.trim();
 }
 
